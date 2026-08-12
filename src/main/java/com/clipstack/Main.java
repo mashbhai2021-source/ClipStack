@@ -9,45 +9,52 @@ import java.util.concurrent.TimeUnit;
 
 public class Main {
 
+
     private static String lastText = "";
 
     public static void main(String[] args) {
-        System.out.println("=== ClipStack Polling Engine Started ===");
-        System.out.println("Monitoring system clipboard every 1000ms... (Press Ctrl+C to stop)");
+
+        ClipboardHistory historyManager = new ClipboardHistory();
+
+        System.out.println("=== ClipStack History Manager Started ===");
+        System.out.println("Monitoring clipboard. Maximum history size is capped at 10.");
+        System.out.println("Go copy some text to see the rolling cache in action!");
 
 
         ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-
 
         scheduler.scheduleAtFixedRate(() -> {
             try {
                 String currentText = getSystemClipboardText();
 
 
-                if (currentText != null && !currentText.equals(lastText)) {
+                if (currentText != null && !currentText.trim().isEmpty() && !currentText.equals(lastText)) {
                     lastText = currentText;
-                    System.out.println("[DETECTED CLIPBOARD CHANGE] -> " + currentText);
+
+
+                    historyManager.addSnippet(currentText);
+
+
+                    System.out.println("\n[NEW CLIPBOARD EVENT DETECTED]");
+                    System.out.println("Just Copied: " + currentText);
+                    System.out.println("Current Stack Size: " + historyManager.getSize() + "/10");
+                    System.out.println("Stack Contents (Oldest to Newest):");
+
+                    for (String snippet : historyManager.getHistory()) {
+                        System.out.println(" -> " + snippet);
+                    }
                 }
             } catch (Exception e) {
-                System.err.println("Error reading clipboard: " + e.getMessage());
+
             }
         }, 0, 1000, TimeUnit.MILLISECONDS);
 
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("\nShutting down background thread gracefully...");
-            scheduler.shutdown();
-            try {
-                if (!scheduler.awaitTermination(2, TimeUnit.SECONDS)) {
-                    scheduler.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                scheduler.shutdownNow();
-            }
-            System.out.println("ClipStack stopped.");
+            System.out.println("\nShutting down gracefully...");
+            scheduler.shutdownNow();
         }));
     }
-
 
     private static String getSystemClipboardText() {
         try {
