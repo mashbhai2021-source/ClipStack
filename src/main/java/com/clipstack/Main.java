@@ -3,6 +3,9 @@ package com.clipstack;
 import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.StringSelection;
+import java.util.List;
+import java.util.Scanner;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -10,44 +13,81 @@ import java.util.concurrent.TimeUnit;
 public class Main {
 
     private static String lastText = "";
+    private static final ClipboardHistory historyManager = new ClipboardHistory();
 
     public static void main(String[] args) {
-        System.out.println("=== ClipStack Polling Engine Started ===");
-        System.out.println("Monitoring system clipboard every 1000ms... (Press Ctrl+C to stop)");
-
 
         ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-
-
         scheduler.scheduleAtFixedRate(() -> {
             try {
                 String currentText = getSystemClipboardText();
-
-
-                if (currentText != null && !currentText.equals(lastText)) {
+                if (currentText != null && !currentText.trim().isEmpty() && !currentText.equals(lastText)) {
                     lastText = currentText;
-                    System.out.println("[DETECTED CLIPBOARD CHANGE] -> " + currentText);
+                    historyManager.addSnippet(currentText);
                 }
             } catch (Exception e) {
-                System.err.println("Error reading clipboard: " + e.getMessage());
+                // Ignore background errors
             }
         }, 0, 1000, TimeUnit.MILLISECONDS);
 
 
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("\nShutting down background thread gracefully...");
-            scheduler.shutdown();
-            try {
-                if (!scheduler.awaitTermination(2, TimeUnit.SECONDS)) {
-                    scheduler.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                scheduler.shutdownNow();
+        Scanner scanner = new Scanner(System.in);
+        boolean running = true;
+
+        System.out.println("=== ClipStack Console UI ===");
+
+        while (running) {
+            System.out.println("\n[1] View Clipboard History");
+            System.out.println("[2] Exit");
+            System.out.print("Choose an option: ");
+
+            String choice = scanner.nextLine();
+
+            switch (choice) {
+                case "1":
+                    displayAndSelectHistory(scanner);
+                    break;
+                case "2":
+                    running = false;
+                    break;
+                default:
+                    System.out.println("Invalid option. Try again.");
             }
-            System.out.println("ClipStack stopped.");
-        }));
+        }
+
+
+        System.out.println("Shutting down ClipStack...");
+        scheduler.shutdownNow();
+        scanner.close();
+        System.exit(0);
     }
 
+    private static void displayAndSelectHistory(Scanner scanner) {
+        List<String> history = historyManager.getHistory();
+        if (history.isEmpty()) {
+            System.out.println("\nHistory is empty. Go copy some text!");
+            return;
+        }
+
+        System.out.println("\n--- Last 10 Copied Items ---");
+        for (int i = 0; i < history.size(); i++) {
+            System.out.println((i + 1) + ". " + history.get(i));
+        }
+        System.out.println("0. Cancel");
+        System.out.print("Pick a number to re-copy (0 to cancel): ");
+
+        try {
+            int selection = Integer.parseInt(scanner.nextLine());
+            if (selection > 0 && selection <= history.size()) {
+                String selectedText = history.get(selection - 1);
+                setSystemClipboardText(selectedText);
+                lastText = selectedText; // Prevent polling loop from instantly re-adding it
+                System.out.println("\n>> SUCCESS: Copied back to clipboard!");
+            }
+        } catch (NumberFormatException e) {
+            System.out.println("Invalid input. Please enter a number.");
+        }
+    }
 
     private static String getSystemClipboardText() {
         try {
@@ -55,9 +95,17 @@ public class Main {
             if (clipboard.isDataFlavorAvailable(DataFlavor.stringFlavor)) {
                 return (String) clipboard.getData(DataFlavor.stringFlavor);
             }
-        } catch (Exception e) {
-
-        }
+        } catch (Exception e) {}
         return null;
+    }
+
+    private static void setSystemClipboardText(String text) {
+        try {
+            StringSelection selection = new StringSelection(text);
+            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+            clipboard.setContents(selection, selection);
+        } catch (Exception e) {
+            System.out.println("Failed to set clipboard text.");
+        }
     }
 }
