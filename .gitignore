@@ -1,0 +1,30 @@
+# Compiled class files
+*.class
+*.log
+
+# BlueJ files
+*.ctxt
+
+# Mobile Tools for Java (J2ME)
+.mtj.tmp/
+
+# Package Files #
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# IDE Specific Directories #
+.hsperfdata_*
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+bin/
+out/
+build/
+target/
