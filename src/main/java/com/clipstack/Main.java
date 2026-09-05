@@ -101,11 +101,19 @@ public class Main {
 
     private static void setSystemClipboardText(String text) {
         try {
+
             StringSelection selection = new StringSelection(text);
+            
             Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+
+
             clipboard.setContents(selection, selection);
+
+        } catch (IllegalStateException e) {
+            System.err.println("\n[ERROR] The OS clipboard is currently unavailable or locked by another application.");
         } catch (Exception e) {
-            System.out.println("Failed to set clipboard text.");
+            System.err.println("\n[ERROR] Failed to inject text back into the system clipboard.");
         }
     }
+
 }
