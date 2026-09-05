@@ -1,11 +1,10 @@
 package com.clipstack;
 
-import java.awt.Toolkit;
+import javax.swing.*;
+import java.awt.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
-import java.util.List;
-import java.util.Scanner;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -15,8 +14,15 @@ public class Main {
     private static String lastText = "";
     private static final ClipboardHistory historyManager = new ClipboardHistory();
 
-    public static void main(String[] args) {
+    // GUI Components
+    private static DefaultListModel<String> listModel;
+    private static JFrame frame;
 
+    public static void main(String[] args) {
+        // 1. Initialize the GUI on the Event Dispatch Thread
+        SwingUtilities.invokeLater(() -> createAndShowGUI());
+
+        // 2. Start the Background Polling Engine
         ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
         scheduler.scheduleAtFixedRate(() -> {
             try {
@@ -24,71 +30,60 @@ public class Main {
                 if (currentText != null && !currentText.trim().isEmpty() && !currentText.equals(lastText)) {
                     lastText = currentText;
                     historyManager.addSnippet(currentText);
+                    updateGUI(); // Refresh the visual list when new text is found
                 }
             } catch (Exception e) {
-                // Ignore background errors
+                // Ignore background polling errors
             }
         }, 0, 1000, TimeUnit.MILLISECONDS);
-
-
-        Scanner scanner = new Scanner(System.in);
-        boolean running = true;
-
-        System.out.println("=== ClipStack Console UI ===");
-
-        while (running) {
-            System.out.println("\n[1] View Clipboard History");
-            System.out.println("[2] Exit");
-            System.out.print("Choose an option: ");
-
-            String choice = scanner.nextLine();
-
-            switch (choice) {
-                case "1":
-                    displayAndSelectHistory(scanner);
-                    break;
-                case "2":
-                    running = false;
-                    break;
-                default:
-                    System.out.println("Invalid option. Try again.");
-            }
-        }
-
-
-        System.out.println("Shutting down ClipStack...");
-        scheduler.shutdownNow();
-        scanner.close();
-        System.exit(0);
     }
 
-    private static void displayAndSelectHistory(Scanner scanner) {
-        List<String> history = historyManager.getHistory();
-        if (history.isEmpty()) {
-            System.out.println("\nHistory is empty. Go copy some text!");
-            return;
-        }
+    private static void createAndShowGUI() {
+        frame = new JFrame("ClipStack - History Manager");
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setSize(400, 300);
+        frame.setLayout(new BorderLayout());
 
-        System.out.println("\n--- Last 10 Copied Items ---");
-        for (int i = 0; i < history.size(); i++) {
-            System.out.println((i + 1) + ". " + history.get(i));
-        }
-        System.out.println("0. Cancel");
-        System.out.print("Pick a number to re-copy (0 to cancel): ");
+        // Create the scrollable list to display history
+        listModel = new DefaultListModel<>();
+        JList<String> historyList = new JList<>(listModel);
+        historyList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        JScrollPane scrollPane = new JScrollPane(historyList);
+        scrollPane.setBorder(BorderFactory.createTitledBorder("Last 10 Copied Items"));
 
-        try {
-            int selection = Integer.parseInt(scanner.nextLine());
-            if (selection > 0 && selection <= history.size()) {
-                String selectedText = history.get(selection - 1);
+        // Create the copy button (Week 6 Logic)
+        JButton copyButton = new JButton("Copy Selected to Clipboard");
+        copyButton.addActionListener(e -> {
+            String selectedText = historyList.getSelectedValue();
+            if (selectedText != null) {
                 setSystemClipboardText(selectedText);
-                lastText = selectedText; // Prevent polling loop from instantly re-adding it
-                System.out.println("\n>> SUCCESS: Copied back to clipboard!");
+                lastText = selectedText; // Prevent polling loop from instantly catching this
+                JOptionPane.showMessageDialog(frame, "Successfully copied to OS clipboard!", "Success", JOptionPane.INFORMATION_MESSAGE);
+            } else {
+                JOptionPane.showMessageDialog(frame, "Please select an item first.", "Warning", JOptionPane.WARNING_MESSAGE);
             }
-        } catch (NumberFormatException e) {
-            System.out.println("Invalid input. Please enter a number.");
-        }
+        });
+
+        // Add components to window
+        frame.add(scrollPane, BorderLayout.CENTER);
+        frame.add(copyButton, BorderLayout.SOUTH);
+
+        // Center on screen and display
+        frame.setLocationRelativeTo(null);
+        frame.setVisible(true);
     }
 
+    // Safely updates the Java Swing UI from the background polling thread
+    private static void updateGUI() {
+        SwingUtilities.invokeLater(() -> {
+            listModel.clear();
+            for (String snippet : historyManager.getHistory()) {
+                listModel.addElement(snippet);
+            }
+        });
+    }
+
+    // Reads from OS Clipboard
     private static String getSystemClipboardText() {
         try {
             Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
@@ -99,21 +94,14 @@ public class Main {
         return null;
     }
 
+    // Writes to OS Clipboard
     private static void setSystemClipboardText(String text) {
         try {
-
             StringSelection selection = new StringSelection(text);
-            
             Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-
-
             clipboard.setContents(selection, selection);
-
-        } catch (IllegalStateException e) {
-            System.err.println("\n[ERROR] The OS clipboard is currently unavailable or locked by another application.");
         } catch (Exception e) {
-            System.err.println("\n[ERROR] Failed to inject text back into the system clipboard.");
+            System.err.println("Failed to inject text back into the system clipboard.");
         }
     }
-
 }
