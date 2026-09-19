@@ -105,14 +105,14 @@ public class Main {
 
     private static void updateUI() {
         SwingUtilities.invokeLater(() -> {
-            // A. Update the Swing GUI List
+            // A. Updates the Swing GUI List
             listModel.clear();
             List<String> history = historyManager.getHistory();
             for (String snippet : history) {
                 listModel.addElement(snippet);
             }
 
-            // B. Update the System Tray Menu
+            // B. Updates the System Tray Menu
             if (trayMenu != null) {
                 trayMenu.removeAll();
 
@@ -151,7 +151,7 @@ public class Main {
         });
     }
 
-    // Creates a visual tray icon programmatically so you don't need external image files
+    // Creates a visual tray icon programmatically so I don't need external image files
     private static Image createDynamicIcon() {
         BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = image.createGraphics();
@@ -164,13 +164,35 @@ public class Main {
         return image;
     }
 
+    // Reads from OS Clipboard
     private static String getSystemClipboardText() {
         try {
             Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+            if (clipboard == null) return null;
+
+            // 1. Primary Check: Is it plain text?
             if (clipboard.isDataFlavorAvailable(DataFlavor.stringFlavor)) {
                 return (String) clipboard.getData(DataFlavor.stringFlavor);
             }
-        } catch (Exception e) {}
+            // 2. Defensive check: Is it an image?
+            else if (clipboard.isDataFlavorAvailable(DataFlavor.imageFlavor)) {
+                System.out.println("[DEBUG] Ignored clipboard data: Image payload detected.");
+            }
+            // 3. Defensive check: Is it a file or folder?
+            else if (clipboard.isDataFlavorAvailable(DataFlavor.javaFileListFlavor)) {
+                System.out.println("[DEBUG] Ignored clipboard data: File/Folder payload detected.");
+            }
+            // 4. Defensive check: Unsupported rich text or null streams
+            else {
+                System.out.println("[DEBUG] Ignored clipboard data: Unsupported format or null stream.");
+            }
+        } catch (IllegalStateException e) {
+            // Happens when the OS or another app temporarily locks the clipboard memory
+            System.err.println("[WARNING] OS Clipboard temporarily locked. Retrying next cycle...");
+        } catch (Exception e) {
+            // Catches IOException and UnsupportedFlavorException safely
+            System.err.println("[ERROR] Failed to read clipboard data: " + e.getMessage());
+        }
         return null;
     }
 
