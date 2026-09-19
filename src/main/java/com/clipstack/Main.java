@@ -2,9 +2,6 @@ package com.clipstack;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.datatransfer.Clipboard;
-import java.awt.datatransfer.DataFlavor;
-import java.awt.datatransfer.StringSelection;
 import java.awt.image.BufferedImage;
 import java.util.List;
 import java.util.concurrent.Executors;
@@ -22,31 +19,30 @@ public class Main {
     private static TrayIcon trayIcon;
 
     public static void main(String[] args) {
-        // 1. Initialize the GUI and System Tray on the Event Dispatch Thread
         SwingUtilities.invokeLater(() -> {
             createAndShowGUI();
             setupSystemTray();
         });
 
-        // 2. Start the Background Polling Engine
         ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
         scheduler.scheduleAtFixedRate(() -> {
             try {
-                String currentText = getSystemClipboardText();
+                // Delegated to the new ClipboardManager class
+                String currentText = ClipboardManager.readSystemClipboard();
+
                 if (currentText != null && !currentText.trim().isEmpty() && !currentText.equals(lastText)) {
                     lastText = currentText;
                     historyManager.addSnippet(currentText);
-                    updateUI(); // Refresh both the Swing Window and the System Tray Menu
+                    updateUI();
                 }
             } catch (Exception e) {
-                // Ignore background polling errors
+                // Ignore thread execution errors
             }
         }, 0, 1000, TimeUnit.MILLISECONDS);
     }
 
     private static void createAndShowGUI() {
         frame = new JFrame("ClipStack - History Manager");
-        // Hide the window instead of exiting when the user clicks 'X'
         frame.setDefaultCloseOperation(JFrame.HIDE_ON_CLOSE);
         frame.setSize(400, 300);
         frame.setLayout(new BorderLayout());
@@ -61,7 +57,7 @@ public class Main {
         copyButton.addActionListener(e -> {
             String selectedText = historyList.getSelectedValue();
             if (selectedText != null) {
-                setSystemClipboardText(selectedText);
+                ClipboardManager.writeToSystemClipboard(selectedText);
                 lastText = selectedText;
                 JOptionPane.showMessageDialog(frame, "Successfully copied to OS clipboard!", "Success", JOptionPane.INFORMATION_MESSAGE);
             } else {
@@ -72,14 +68,11 @@ public class Main {
         frame.add(scrollPane, BorderLayout.CENTER);
         frame.add(copyButton, BorderLayout.SOUTH);
         frame.setLocationRelativeTo(null);
-        frame.setVisible(true);
+        frame.setVisible(true); // <-- Add this missing line right here!
     }
 
     private static void setupSystemTray() {
-        if (!SystemTray.isSupported()) {
-            System.err.println("System tray is not supported on this OS.");
-            return;
-        }
+        if (!SystemTray.isSupported()) return;
 
         SystemTray tray = SystemTray.getSystemTray();
         trayMenu = new PopupMenu();
@@ -87,8 +80,6 @@ public class Main {
 
         trayIcon = new TrayIcon(icon, "ClipStack", trayMenu);
         trayIcon.setImageAutoSize(true);
-
-        // Double-clicking the tray icon brings the Swing window back up
         trayIcon.addActionListener(e -> {
             frame.setVisible(true);
             frame.setState(Frame.NORMAL);
@@ -99,23 +90,19 @@ public class Main {
         } catch (AWTException e) {
             System.err.println("TrayIcon could not be added.");
         }
-
         updateUI();
     }
 
     private static void updateUI() {
         SwingUtilities.invokeLater(() -> {
-            // A. Updates the Swing GUI List
             listModel.clear();
             List<String> history = historyManager.getHistory();
             for (String snippet : history) {
                 listModel.addElement(snippet);
             }
 
-            // B. Updates the System Tray Menu
             if (trayMenu != null) {
                 trayMenu.removeAll();
-
                 MenuItem openApp = new MenuItem("Open ClipStack UI");
                 openApp.addActionListener(e -> {
                     frame.setVisible(true);
@@ -135,14 +122,13 @@ public class Main {
                         MenuItem item = new MenuItem(displayText);
 
                         item.addActionListener(e -> {
-                            setSystemClipboardText(text);
+                            ClipboardManager.writeToSystemClipboard(text);
                             lastText = text;
                             trayIcon.displayMessage("ClipStack", "Copied to clipboard!", TrayIcon.MessageType.INFO);
                         });
                         trayMenu.add(item);
                     }
                 }
-
                 trayMenu.addSeparator();
                 MenuItem exitItem = new MenuItem("Exit ClipStack");
                 exitItem.addActionListener(e -> System.exit(0));
@@ -151,56 +137,15 @@ public class Main {
         });
     }
 
-    // Creates a visual tray icon programmatically so I don't need external image files
     private static Image createDynamicIcon() {
         BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = image.createGraphics();
-        g.setColor(new Color(41, 128, 185)); // Blue
+        g.setColor(new Color(41, 128, 185));
         g.fillRect(0, 0, 16, 16);
         g.setColor(Color.WHITE);
         g.setFont(new Font("Arial", Font.BOLD, 12));
         g.drawString("C", 3, 13);
         g.dispose();
         return image;
-    }
-
-    // Reads from OS Clipboard
-    private static String getSystemClipboardText() {
-        try {
-            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-            if (clipboard == null) return null;
-
-            // 1. Primary Check: Is it plain text?
-            if (clipboard.isDataFlavorAvailable(DataFlavor.stringFlavor)) {
-                return (String) clipboard.getData(DataFlavor.stringFlavor);
-            }
-            // 2. Defensive check: Is it an image?
-            else if (clipboard.isDataFlavorAvailable(DataFlavor.imageFlavor)) {
-                System.out.println("[DEBUG] Ignored clipboard data: Image payload detected.");
-            }
-            // 3. Defensive check: Is it a file or folder?
-            else if (clipboard.isDataFlavorAvailable(DataFlavor.javaFileListFlavor)) {
-                System.out.println("[DEBUG] Ignored clipboard data: File/Folder payload detected.");
-            }
-            // 4. Defensive check: Unsupported rich text or null streams
-            else {
-                System.out.println("[DEBUG] Ignored clipboard data: Unsupported format or null stream.");
-            }
-        } catch (IllegalStateException e) {
-            // Happens when the OS or another app temporarily locks the clipboard memory
-            System.err.println("[WARNING] OS Clipboard temporarily locked. Retrying next cycle...");
-        } catch (Exception e) {
-            // Catches IOException and UnsupportedFlavorException safely
-            System.err.println("[ERROR] Failed to read clipboard data: " + e.getMessage());
-        }
-        return null;
-    }
-
-    private static void setSystemClipboardText(String text) {
-        try {
-            StringSelection selection = new StringSelection(text);
-            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-            clipboard.setContents(selection, selection);
-        } catch (Exception e) {}
     }
 }
